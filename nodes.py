@@ -195,6 +195,36 @@ IMAGE_MODES = [
     "autocrop with mask"
 ]
 
+
+class StyleModelApplyInterpolation:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {"conditioning": ("CONDITIONING", ),
+                             "style_model": ("STYLE_MODEL", ),
+                             "clip_vision_output": ("CLIP_VISION_OUTPUT", ),
+                             "downsampling_factor": ("INT", {"default": 3, "min": 1, "max": 9}),
+                             "mode": (["nearest", "bicubic", "bilinear","area", "nearest-exact" ], {"default": "area"})
+                             }}
+    RETURN_TYPES = ("CONDITIONING",)
+    FUNCTION = "apply_stylemodel"
+
+    CATEGORY = "conditioning/style_model"
+
+    def apply_stylemodel(self, clip_vision_output, style_model, conditioning, downsampling_factor, mode):
+        cond = style_model.get_cond(clip_vision_output).flatten(start_dim=0, end_dim=1).unsqueeze(dim=0)
+        if downsampling_factor>1:
+            (b,t,h)=cond.shape
+            m = int(np.sqrt(t))
+            cond=torch.nn.functional.interpolate(cond.view(b, m, m, h).transpose(1,-1), size=(m//downsampling_factor, m//downsampling_factor), mode=mode)#
+            cond=cond.transpose(1,-1).reshape(b,-1,h)
+        c = []
+        for t in conditioning:
+            n = [torch.cat((t[0], cond), dim=1), t[1].copy()]
+            c.append(n)
+        return (c, )
+
+
+
 class ReduxAdvanced:
     @classmethod
     def INPUT_TYPES(s):
@@ -251,11 +281,13 @@ class ReduxAdvanced:
 # NOTE: names should be globally unique
 NODE_CLASS_MAPPINGS = {
     "StyleModelApplySimple": StyleModelApplySimple,
+    "StyleModelApplyInterpolation": StyleModelApplyInterpolation,
     "ReduxAdvanced": ReduxAdvanced
 }
 
 # A dictionary that contains the friendly/humanly readable titles for the nodes
 NODE_DISPLAY_NAME_MAPPINGS = {
     "StyleModelApplySimple": "Apply style model (simple)",
+    "StyleModelApplyInterpolation": "Apply style model (interpolation)",
     "ReduxAdvanced": "Apply Redux model (advanced)"
 }
